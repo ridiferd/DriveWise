@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "DriveWise.Web",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/DriveWise.Web/DriveWise.Web.csproj"
+    }
+  ]
+}

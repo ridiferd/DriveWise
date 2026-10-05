@@ -1,0 +1,10 @@
+.dw-header { display:flex; justify-content:space-between; align-items:center; padding:14px 32px; background:#fff; border-bottom:4px solid #A50E0E; position:sticky; top:0; z-index:5; }
+.dw-brand { font-weight:800; font-size:1.3rem; color:#A50E0E; display:flex; gap:10px; align-items:center; }
+.dw-logo { background:#A50E0E; color:#fff; border-radius:10px; padding:4px 9px; font-size:.95rem; }
+nav { display:flex; gap:16px; align-items:center; font-size:.9rem; }
+nav a { color:#555; }
+.dw-pill { background:#A50E0E; color:#fff; border-radius:999px; padding:4px 14px; font-weight:600; }
+.dw-main { max-width:1200px; margin:0 auto; padding:24px 32px 48px; }
+.dw-footer { text-align:center; color:#888; font-size:.8rem; padding:16px; border-top:1px solid #eee; }
+#blazor-error-ui { background:lightyellow; bottom:0; box-shadow:0 -1px 2px rgba(0,0,0,.2); display:none; left:0; padding:.6rem 1.25rem .7rem; position:fixed; width:100%; z-index:1000; }
+#blazor-error-ui .dismiss { cursor:pointer; position:absolute; right:.75rem; top:.5rem; }

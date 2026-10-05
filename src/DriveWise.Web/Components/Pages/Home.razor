@@ -1,0 +1,254 @@
+@page "/"
+@rendermode InteractiveServer
+@inject IFuelEconomyClient FuelEconomy
+@inject OfflineFuelEconomyClient Snapshot
+@inject RecommendationEngine Engine
+
+<PageTitle>DriveWise | Compare before you buy</PageTitle>
+
+<section class="hero">
+    <div>
+        <h1>Compare before you buy.</h1>
+        <p>Build a shortlist from official EPA data, tell us how you drive, and DriveWise ranks the best fit with reasons you can explain to your family.</p>
+    </div>
+    @if (FuelEconomy is ResilientFuelEconomyClient { LastCallUsedFallback: true })
+    {
+        <span class="badge warn">Offline snapshot in use</span>
+    }
+</section>
+
+<div class="grid">
+    <!-- 1. Shortlist builder (Story DW-1) -->
+    <section class="card">
+        <h2><span class="num">1</span> Build your shortlist</h2>
+        <div class="form-row">
+            <label>Year
+                <select @bind="year" @bind:after="OnYearChanged">
+                    <option value="0">Select</option>
+                    @foreach (var y in years) { <option value="@y.Value">@y.Text</option> }
+                </select>
+            </label>
+            <label>Make
+                <select @bind="make" @bind:after="OnMakeChanged" disabled="@(makes.Count == 0)">
+                    <option value="">Select</option>
+                    @foreach (var m in makes) { <option value="@m.Value">@m.Text</option> }
+                </select>
+            </label>
+        </div>
+        <div class="form-row">
+            <label>Model
+                <select @bind="model" @bind:after="OnModelChanged" disabled="@(models.Count == 0)">
+                    <option value="">Select</option>
+                    @foreach (var m in models) { <option value="@m.Value">@m.Text</option> }
+                </select>
+            </label>
+            <label>Option
+                <select @bind="optionId" disabled="@(options.Count == 0)">
+                    <option value="0">Select</option>
+                    @foreach (var o in options) { <option value="@o.Value">@o.Text</option> }
+                </select>
+            </label>
+        </div>
+        <div class="actions">
+            <button class="btn" disabled="@(optionId == 0 || busy)" @onclick="AddToShortlist">Add to shortlist</button>
+            <button class="btn ghost" @onclick="LoadSample">Load sample shortlist</button>
+            @if (shortlist.Count > 0) { <button class="btn ghost" @onclick="() => { shortlist.Clear(); result = null; }">Clear</button> }
+        </div>
+        @if (error is not null) { <p class="error">@error</p> }
+
+        <ul class="chips">
+            @foreach (var v in shortlist)
+            {
+                <li>@v.DisplayName <small>@Powertrain(v)</small>
+                    <button title="Remove" @onclick="() => Remove(v)">×</button></li>
+            }
+        </ul>
+        <p class="muted">@shortlist.Count of @MaxShortlist vehicles</p>
+    </section>
+
+    <!-- 2. Driving profile (Story DW-2) -->
+    <section class="card">
+        <h2><span class="num">2</span> How do you drive?</h2>
+        <div class="form-row">
+            <label>Miles per year
+                <input type="number" min="1000" max="100000" step="1000" @bind="profile.AnnualMiles" />
+            </label>
+            <label>Ownership (years)
+                <input type="number" min="1" max="20" @bind="profile.OwnershipYears" />
+            </label>
+        </div>
+        <div class="form-row">
+            <label>Powertrain
+                <select @bind="profile.Powertrain">
+                    @foreach (var p in Enum.GetValues<PowertrainPreference>()) { <option value="@p">@p</option> }
+                </select>
+            </label>
+            <label>Class contains
+                <input placeholder="e.g. Sport Utility" @bind="profile.VehicleClassContains" />
+            </label>
+        </div>
+        <label>Max fuel cost per year (USD, optional)
+            <input type="number" min="0" step="100" @bind="profile.MaxAnnualFuelCostUsd" />
+        </label>
+        <div class="weights">
+            <label>Efficiency <b>@profile.EfficiencyWeight</b><input type="range" min="0" max="1" step="0.1" @bind="profile.EfficiencyWeight" @bind:event="oninput" /></label>
+            <label>Cost <b>@profile.CostWeight</b><input type="range" min="0" max="1" step="0.1" @bind="profile.CostWeight" @bind:event="oninput" /></label>
+            <label>Emissions <b>@profile.EmissionsWeight</b><input type="range" min="0" max="1" step="0.1" @bind="profile.EmissionsWeight" @bind:event="oninput" /></label>
+        </div>
+        <button class="btn wide" disabled="@(shortlist.Count == 0)" @onclick="Recommend">Recommend</button>
+    </section>
+</div>
+
+<!-- 3. Recommendation + comparison (Story DW-3) -->
+@if (result is not null)
+{
+    <section class="card results">
+        <h2><span class="num">3</span> Your recommendation</h2>
+        @if (result.Best is { } best)
+        {
+            <div class="winner">
+                <div>
+                    <div class="muted">Best fit</div>
+                    <div class="winner-name">@best.Vehicle.DisplayName</div>
+                    <ul>@foreach (var r in best.Reasons) { <li>@r</li> }</ul>
+                </div>
+                <div class="score">@best.Score.ToString("0")<small>/100</small></div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr><th>#</th><th>Vehicle</th><th>Class</th><th>Combined</th><th>L/100 km</th><th>Fuel / yr</th><th>Fuel / @profile.OwnershipYears yr</th><th>CO2 g/mi</th><th>Score</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in result.Ranked)
+                    {
+                        <tr class="@(r.Rank == 1 ? "top" : "")">
+                            <td>@r.Rank</td>
+                            <td><b>@r.Vehicle.DisplayName</b><br /><small>@Powertrain(r.Vehicle)</small></td>
+                            <td>@r.Vehicle.VehicleClass</td>
+                            <td>@r.Vehicle.CombinedMpg @(r.Vehicle.IsElectric ? "MPGe" : "MPG")</td>
+                            <td>@(r.Vehicle.IsElectric ? "n/a" : r.Vehicle.LitersPer100Km.ToString("0.0"))</td>
+                            <td>$@r.AnnualFuelCostUsd.ToString("N0")</td>
+                            <td>$@r.OwnershipFuelCostUsd.ToString("N0")</td>
+                            <td>@r.Vehicle.Co2GramsPerMile.ToString("N0")</td>
+                            <td><div class="bar"><span style="width:@(r.Score.ToString(System.Globalization.CultureInfo.InvariantCulture))%"></span></div>@r.Score.ToString("0.0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p>No vehicle in your shortlist matches the profile.</p>
+        }
+
+        @if (result.Excluded.Count > 0)
+        {
+            <details>
+                <summary>@result.Excluded.Count excluded</summary>
+                <ul>@foreach (var x in result.Excluded) { <li><b>@x.Vehicle.DisplayName</b>: @x.Reason</li> }</ul>
+            </details>
+        }
+    </section>
+}
+
+@code {
+    private const int MaxShortlist = 6;
+
+    private IReadOnlyList<MenuItem> years = [], makes = [], models = [], options = [];
+    private int year;
+    private string make = "", model = "";
+    private int optionId;
+    private bool busy;
+    private string? error;
+
+    private readonly List<Vehicle> shortlist = [];
+    private ProfileForm profile = new();
+    private RecommendationResult? result;
+
+    /// <summary>Demo checkpoint: /?sample=true preloads the sample shortlist and recommends.</summary>
+    [SupplyParameterFromQuery(Name = "sample")] public bool Sample { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        years = await Safe(() => FuelEconomy.GetYearsAsync()) ?? [];
+        if (Sample) { LoadSample(); Recommend(); }
+    }
+
+    private async Task OnYearChanged()
+    {
+        make = model = ""; optionId = 0; models = options = [];
+        makes = year == 0 ? [] : await Safe(() => FuelEconomy.GetMakesAsync(year)) ?? [];
+    }
+
+    private async Task OnMakeChanged()
+    {
+        model = ""; optionId = 0; options = [];
+        models = make == "" ? [] : await Safe(() => FuelEconomy.GetModelsAsync(year, make)) ?? [];
+    }
+
+    private async Task OnModelChanged()
+    {
+        optionId = 0;
+        options = model == "" ? [] : await Safe(() => FuelEconomy.GetOptionsAsync(year, make, model)) ?? [];
+    }
+
+    private async Task AddToShortlist()
+    {
+        if (shortlist.Count >= MaxShortlist) { error = $"Shortlist is limited to {MaxShortlist} vehicles."; return; }
+        if (shortlist.Any(v => v.Id == optionId)) { error = "Already in your shortlist."; return; }
+        busy = true;
+        var v = await Safe(() => FuelEconomy.GetVehicleAsync(optionId));
+        busy = false;
+        if (v is not null) { shortlist.Add(v); error = null; }
+    }
+
+    private void LoadSample()
+    {
+        shortlist.Clear();
+        shortlist.AddRange(Snapshot.All.DistinctBy(v => v.Make).Take(MaxShortlist));
+        error = null; result = null;
+    }
+
+    private void Remove(Vehicle v) { shortlist.Remove(v); result = null; }
+
+    private void Recommend()
+    {
+        try { result = Engine.Recommend(shortlist, profile.ToProfile()); error = null; }
+        catch (ArgumentException ex) { error = ex.Message; }
+    }
+
+    private async Task<T?> Safe<T>(Func<Task<T>> call)
+    {
+        try { error = null; return await call(); }
+        catch (Exception ex) { error = $"Data service error: {ex.Message}"; return default; }
+    }
+
+    private static string Powertrain(Vehicle v) =>
+        v.IsElectric ? $"EV, {v.ElectricRangeMiles} mi range" : v.IsHybrid ? "Hybrid" : v.FuelType;
+
+    /// <summary>Mutable form model bound to the UI, mapped to the immutable DrivingProfile.</summary>
+    private sealed class ProfileForm
+    {
+        public int AnnualMiles { get; set; } = DrivingProfile.EpaBaselineMiles;
+        public int OwnershipYears { get; set; } = 5;
+        public double EfficiencyWeight { get; set; } = 0.4;
+        public double CostWeight { get; set; } = 0.4;
+        public double EmissionsWeight { get; set; } = 0.2;
+        public PowertrainPreference Powertrain { get; set; }
+        public string? VehicleClassContains { get; set; }
+        public int? MaxAnnualFuelCostUsd { get; set; }
+
+        public DrivingProfile ToProfile() => new()
+        {
+            AnnualMiles = AnnualMiles,
+            OwnershipYears = OwnershipYears,
+            EfficiencyWeight = EfficiencyWeight,
+            CostWeight = CostWeight,
+            EmissionsWeight = EmissionsWeight,
+            Powertrain = Powertrain,
+            VehicleClassContains = VehicleClassContains,
+            MaxAnnualFuelCostUsd = MaxAnnualFuelCostUsd is > 0 ? MaxAnnualFuelCostUsd : null
+        };
+    }
+}
